@@ -4,6 +4,7 @@ struct ContentView: View {
     @StateObject private var gpsLogger = GPSLogger()
     @StateObject private var recorder = VideoRecorder(gpsLogger: GPSLogger())
     @StateObject private var orientationObserver = OrientationObserver()
+    @StateObject private var sightTargetStore = SightTargetStore()
     
     @State private var recordingStartTime: Date?
     @State private var timer: Timer?
@@ -33,16 +34,16 @@ struct ContentView: View {
                             topStatusBar
                             
                             // Main content area with improved spacing
-                            HStack(spacing: 4) {
-                                // Left side - Video preview (70% width)
+                            HStack(spacing: 6) {
+                                // Left side - Video preview (85% width)
                                 videoPreviewSection
-                                    .frame(maxWidth: geometry.size.width * 0.70)
-                                
-                                // Right side - Controls (25% width)
+                                    .frame(maxWidth: geometry.size.width * 0.85)
+
+                                // Right side - Controls (13% width)
                                 controlsSection
-                                    .frame(maxWidth: geometry.size.width * 0.25)
+                                    .frame(maxWidth: geometry.size.width * 0.13)
                             }
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, 8)
                             .padding(.vertical, 6)
                             
                             // Bottom GPS info bar with compact styling
@@ -56,6 +57,10 @@ struct ContentView: View {
             }
             .onAppear {
                 OrientationLock.lockToLandscape()
+                gpsLogger.startTracking()
+            }
+            .onDisappear {
+                gpsLogger.stopTracking()
             }
         } else {
             // Fallback on earlier versions
@@ -259,9 +264,13 @@ struct ContentView: View {
         VStack(spacing: 1) {
                             // Video preview with minimal styling
             VideoPreviewView(session: recorder.session, orientationObserver: orientationObserver)
-                .aspectRatio(16/9, contentMode: .fit)
+                .aspectRatio(16/9, contentMode: .fill)
                 .background(Color.black)
                 .cornerRadius(12)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    captureTapPhoto()
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.white.opacity(0.08), lineWidth: 1)
@@ -297,6 +306,11 @@ struct ContentView: View {
                         Spacer()
                     } : nil
                 )
+                .overlay(alignment: .center) {
+                    if let match = activeSightMatch {
+                        SightTriangleOverlayView(match: match)
+                    }
+                }
         }
     }
     
@@ -358,15 +372,7 @@ struct ContentView: View {
         HStack(spacing: 6) {
             // Photo capture button
             Button(action: {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    isTakingPhoto = true
-                }
-                recorder.capturePhoto(withAudio: isMicEnabled)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        isTakingPhoto = false
-                    }
-                }
+                captureTapPhoto()
             }) {
                 Image(systemName: "camera.fill")
                     .font(.system(size: 18, weight: .semibold))
@@ -587,5 +593,24 @@ struct ContentView: View {
         timer = nil
         recordingStartTime = nil
         elapsedTimeString = "00:00:00"
+    }
+
+    var activeSightMatch: SightTargetMatch? {
+        guard let location = gpsLogger.lastLocation else { return nil }
+        let trueHeading = gpsLogger.lastHeading?.trueHeading ?? -1
+        let heading = trueHeading >= 0 ? trueHeading : gpsLogger.lastHeading?.magneticHeading
+        return sightTargetStore.match(for: location, heading: heading)
+    }
+
+    func captureTapPhoto() {
+        withAnimation(.easeOut(duration: 0.15)) {
+            isTakingPhoto = true
+        }
+        recorder.capturePhoto(withAudio: isMicEnabled)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeOut(duration: 0.15)) {
+                isTakingPhoto = false
+            }
+        }
     }
 }

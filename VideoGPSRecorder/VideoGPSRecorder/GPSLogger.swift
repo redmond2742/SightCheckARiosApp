@@ -7,69 +7,35 @@ class GPSLogger: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var fileHandle: FileHandle?
     private var timer: Timer?
     @Published var totalDistance: CLLocationDistance = 0.0
+    @Published var lastHeading: CLHeading?
     
     @Published var lastLocationFix: CLLocation?
-    
-
-
-
     @Published var lastLocation: CLLocation?
+    private var isLogging = false
+
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.distanceFilter = kCLDistanceFilterNone
+        locationManager.activityType = .otherNavigation
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.headingFilter = 1
+    }
+
+    func startTracking() {
+        locationManager.requestWhenInUseAuthorization()
+
+        if CLLocationManager.headingAvailable() {
+            locationManager.startUpdatingHeading()
+        }
+
+        locationManager.startUpdatingLocation()
+    }
 
     func startLogging() {
-        DispatchQueue.main.async {
-            self.locationManager.delegate = self
-            self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
-            self.locationManager.distanceFilter  = kCLDistanceFilterNone
-            self.locationManager.activityType    = .otherNavigation
-            self.locationManager.pausesLocationUpdatesAutomatically = false
-            self.locationManager.requestWhenInUseAuthorization()
-         
-            self.locationManager.startUpdatingLocation()
-            
-          
-        }
-        
-       
-
-        final class LocationService: NSObject, CLLocationManagerDelegate {
-
-            private let locationManager = CLLocationManager()
-
-            override init() {
-                super.init()
-                locationManager.delegate = self
-                locationManager.desiredAccuracy = kCLLocationAccuracyBest
-                // Ask for permission up‑front
-                locationManager.requestWhenInUseAuthorization()
-            }
-
-            // MARK: - CLLocationManagerDelegate (iOS 14+)
-            func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-                switch manager.authorizationStatus {
-
-                case .notDetermined:
-                    // The user hasn’t seen the prompt yet
-                    manager.requestWhenInUseAuthorization()
-
-                case .restricted, .denied:
-                    print("❌ Location permission denied.")
-
-                case .authorizedWhenInUse, .authorizedAlways:
-                    startUpdatingLocation()
-
-                @unknown default:
-                    // Future‑proofing
-                    break
-                }
-            }
-
-            // MARK: - Helpers
-            private func startUpdatingLocation() {
-                locationManager.startUpdatingLocation()
-            }
-        }
-
-
+        startTracking()
+        isLogging = true
 
         let formatter = DateFormatter()
         formatter.dateFormat = "MM-dd-yyyy--HH-mm-ss.SSS"
@@ -88,12 +54,37 @@ class GPSLogger: NSObject, ObservableObject, CLLocationManagerDelegate {
         writeHeader()
     }
 
+    func stopTracking() {
+        locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
+    }
 
     func stopLogging() {
-        locationManager.stopUpdatingLocation()
+        isLogging = false
         writeFooter()
         fileHandle?.closeFile()
         print("Saved GPX to: \(gpxFileURL.path)")
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            startTracking()
+        case .restricted, .denied:
+            print("❌ Location permission denied.")
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        @unknown default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        lastHeading = newHeading
+    }
+
+    func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool {
+        return true
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -106,7 +97,9 @@ class GPSLogger: NSObject, ObservableObject, CLLocationManagerDelegate {
 
         lastLocation = newLocation
         self.lastLocationFix = newLocation
-        //logLocation(newLocation)
+        if isLogging {
+            writeLocation(newLocation)
+        }
     }
 
     

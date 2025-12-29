@@ -1,0 +1,4 @@
+Location_number,Latitude,Longitude,Compass_bearing,Clear_boolean
+1,37.331705,-122.030237,90,true
+2,37.331900,-122.030500,135,false
+3,37.332100,-122.030750,225,true
